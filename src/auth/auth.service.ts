@@ -1,84 +1,95 @@
-import { Injectable, Inject, BadRequestException, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
-import { AuthResponse, SupabaseClient, User } from '@supabase/supabase-js';
+import { Injectable, Inject, InternalServerErrorException, ConflictException, UnauthorizedException, HttpException } from '@nestjs/common';
+import { SupabaseClient, User } from '@supabase/supabase-js';
 import { SignUpDto } from './dto/signup.dto';
 import { SignInDto } from './dto/signin.dto';
+import { AuthResponse } from 'src/types/auth-res.type';
+
 
 @Injectable()
 export class AuthService {
     constructor(@Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient) { }
 
-    async getUserFromToken(token: string) {
-        const { data, error } = await this.supabase.auth.getUser(token);
-        if (error || !data.user) return null;
-        return data.user;
+    async getUserFromToken(token: string): Promise<User | null> {
+        try {
+            const {data, error} = await this.supabase.auth.getUser(token);
+            return data.user as User;
+        } catch {
+            return null;
+        }
     }
     
     async signUp(signUpDto:SignUpDto):Promise<AuthResponse> {
-        const {email,password,first_name,last_name,phone} = signUpDto
+        const {email,password,first_name,last_name,phone,role} = signUpDto
         try {
-            const user = await this.supabase.auth.signUp({
-                email: email,
-                password: password,
+            const {data, error} = await this.supabase.auth.signUp({
+                email,
+                password,
                 options: {
                     data: {
-                        firstName: first_name,
-                        lastName: last_name,
-                        phone: phone,
+                        first_name,
+                        last_name,
+                        phone,
+                        role: role || 'user'
                     },
                 },
             });     
-            console.log(user);
-                
-            return user
+
+            if (error) {
+                if (error.status === 409 && error.message.includes('already registered')) {
+                    throw new ConflictException('Email is already registered');
+                }
+
+                throw new InternalServerErrorException(`Sign up failed: ${error.message}`);
+            }
+
+            // Since we have auto - confirmed users, Supabase will return a session with tokens in both sign - up and sign -in.
+            const authResponse: AuthResponse = {
+                user: {
+                    id: data.user.id,
+                    email: data.user.email!,
+                    firstName: data.user.user_metadata?.first_name || first_name,
+                    lastName: data.user.user_metadata?.last_name || last_name,
+                    phone: data.user.user_metadata?.phone || phone,
+                    role: data.user.user_metadata?.role || role || 'user',
+                },
+            };
+            return authResponse
         } catch (error) {
-            throw new InternalServerErrorException('Failed to sign up');
+            if(error instanceof ConflictException)throw error
+            else if(error instanceof HttpException)throw error
+            throw new InternalServerErrorException(`Unexpected error during sign up:${error.message}`);
         }
     }
-    //    if (error) {
-    //     let message = 'Failed to sign up';
-    //     if (error.message.includes('already registered')) {
-    //         message = 'This email is already in use';
-    //     } else if (error.message.includes('Password')) {
-    //         message = 'Password does not meet requirements';
-    //     }
-    //     throw new BadRequestException(message);
-    // }
-
-    // if (!data.user) {
-    //     throw new BadRequestException('User could not be created');
-    // }
 
     async signIn(signInDto: SignInDto):Promise<AuthResponse> {
         const { email, password } = signInDto
         try {
-            const user = await this.supabase.auth.signInWithPassword({ email, password });
-            // if (error) throw new UnauthorizedException(error.message);
-            // if (!data.session) throw new UnauthorizedException('Invalid credentials');
-            // if (error) {
-            //     let message = 'Login failed';
-            //     if (error.message.includes('Invalid login credentials')) {
-            //         message = 'Invalid email or password';
-            //     }
-            //     throw new UnauthorizedException(message);
-            // }
+            const {data, error} = await this.supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                if (error.status === 400 || error.status === 401) {
+                    throw new UnauthorizedException('Invalid email or password');
+                }
+                throw new InternalServerErrorException(`Sign in failed: ${error.message}`);
+            }
 
-            // if (!data.session || !data.user) {
-            //     throw new UnauthorizedException('Invalid email or password');
-            // }
+            const authResponse: AuthResponse = {
+                accessToken: data.session.access_token,
+                refreshToken: data.session.refresh_token,
+                user: {
+                    id: data.user.id,
+                    email: data.user.email!,
+                    firstName: data.user.user_metadata?.first_name || '',
+                    lastName: data.user.user_metadata?.last_name || '',
+                    phone: data.user.user_metadata?.phone || '',
+                    role: data.user.user_metadata?.role || 'user',
+                },
+            };
 
-            return user;
-        } catch (error) {
-            throw new InternalServerErrorException('SignIn failed');
+            return authResponse 
+        } catch (error) {            
+            if(error instanceof UnauthorizedException)throw error
+            else if (error instanceof HttpException) throw error
+            throw new InternalServerErrorException(`Unexpected error during sign in: ${error.message}`);
         }
     }
-
-    // async getUser(token: string) {
-    //     try {
-    //         const { data, error } = await this.supabase.auth.getUser(token);
-    //         if (error || !data.user) throw new UnauthorizedException('Invalid token');
-    //         return data.user;
-    //     } catch (err) {
-    //         throw new UnauthorizedException('Could not get user');
-    //     }
-    // }
 }

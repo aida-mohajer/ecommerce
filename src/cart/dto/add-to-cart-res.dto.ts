@@ -5,7 +5,10 @@ export class AddToCartResponseDto {
     product_id: string;
 
     @IsUUID()
-    user_id: string;
+    user_id?: string;
+
+    @IsUUID()
+    cart_token?: string;
 
     @IsInt()
     quantity: number;

@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { plainToInstance, Transform, Type } from "class-transformer";
-import { IsArray, IsInt, IsNumber, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
-import { ProductAttributeDto } from "./product-attr.dto";
+import { Transform, Type } from "class-transformer";
+import { IsArray, IsNumber, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateProductDto {
     @ApiPropertyOptional({ example: 'Nike Shoes' })
@@ -23,26 +22,6 @@ export class UpdateProductDto {
     @Min(0)
     @Max(999999.99)
     price?: number;
-
-    @ApiPropertyOptional({
-        type: String,
-        description: 'JSON array of attributes',
-        example: JSON.stringify([
-            { color: 'red', size: 'M', quantity: 10 },
-            { color: 'blue', size: 'M', quantity: 10 }
-        ], null, 2),
-    })
-    @IsOptional()
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => ProductAttributeDto)
-    @Transform(({ value }) => {
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-        return Array.isArray(parsed)
-            ? parsed.map(item => plainToInstance(ProductAttributeDto, item))
-            : [];
-    })
-    attributes: ProductAttributeDto[];
 
     @ApiPropertyOptional({ type: [String], required: false })
     @IsOptional()
